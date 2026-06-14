@@ -1,13 +1,65 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Trophy, Frown, ChevronDown, ChevronUp, Skull, Flame } from 'lucide-react'
+import { Trophy, Frown, ChevronDown, ChevronUp, Skull, Flame, Zap, Shield } from 'lucide-react'
 import type { AuthUser, RankedUser } from '@/lib/types'
 import Header from './Header'
+
+const RULES_SECTIONS = [
+  {
+    title: '🎯 Puntuación base',
+    items: [
+      { label: '0-0 exacto', pts: '+8 pts', detail: '3 de marcador exacto + 5 de bonus especial' },
+      { label: 'Marcador exacto', pts: '+3 pts', detail: 'Coinciden los goles de ambos equipos' },
+      { label: 'Resultado correcto (1X2)', pts: '+1 pt', detail: 'Acertaste ganador o empate' },
+      { label: 'Marcador espejo', pts: '+2 pts', detail: 'Predijiste 2-1, quedó 1-2 (consolación)' },
+      { label: 'Fallo total', pts: '0 pts', detail: 'Sin puntos' },
+    ],
+  },
+  {
+    title: '×2 Multiplicadores de fase',
+    items: [
+      { label: 'Grupos y Octavos', pts: 'x1', detail: 'Puntos normales' },
+      { label: 'Cuartos / Semis / Final', pts: 'x2', detail: 'Todos los puntos se duplican' },
+    ],
+  },
+  {
+    title: '⚡ Comodín (Joker)',
+    items: [
+      { label: '1 comodín disponible por jornada', pts: 'x2 extra', detail: 'Dobla los puntos del partido elegido. Fórmula: (Base × Fase) × 2' },
+      { label: 'Restricción', pts: '', detail: 'Debes activarlo antes del inicio del partido. No acumula' },
+    ],
+  },
+  {
+    title: '🂷 Mecánicas de Caos',
+    items: [
+      { label: 'Carta Trampa', pts: 'Roba 20%', detail: 'Marca al líder en un partido. Si aciertas el marcador exacto, robas el 20% de sus puntos en ese partido' },
+      { label: 'Modo Supervivencia', pts: 'x1.5', detail: 'Si estás en el último 10% del ranking, tus puntos tienen multiplicador de caos extra' },
+    ],
+  },
+  {
+    title: '🏆 Apuestas de Largo Plazo',
+    items: [
+      { label: 'Campeón', pts: '+50 pts', detail: 'Se bloquean antes del primer partido del torneo' },
+      { label: 'Subcampeón', pts: '+30 pts', detail: '' },
+      { label: 'Tercer lugar', pts: '+20 pts', detail: '' },
+      { label: 'Bota de Oro', pts: '+40 pts', detail: 'Máximo goleador individual' },
+      { label: 'Equipo Revelación', pts: '+25 pts', detail: 'Top >15 FIFA que llegue más lejos' },
+      { label: 'Decepcón del Torneo', pts: '+25 pts', detail: 'Top 10 FIFA eliminado en fase de grupos' },
+    ],
+  },
+  {
+    title: '🛡️ Fair Play',
+    items: [
+      { label: 'Compensación por ingreso tardío', pts: 'automático', detail: 'Al registrarte recibes 1 punto por cada partido ya finalizado. Nadie queda fuera de combate' },
+    ],
+  },
+]
 
 export default function RankingClient({ currentUser }: { currentUser: AuthUser }) {
   const [ranking, setRanking] = useState<RankedUser[]>([])
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [showRules, setShowRules] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -28,7 +80,8 @@ export default function RankingClient({ currentUser }: { currentUser: AuthUser }
           <Trophy className="text-yellow-500" /> Tabla del Caos
         </h1>
 
-        <div className="space-y-2">
+        {/* Ranking list */}
+        <div className="space-y-2 mb-8">
           {ranking.map((user, i) => {
             const isFirst = i === 0
             const isLast = i === ranking.length - 1 && ranking.length > 1
@@ -37,8 +90,8 @@ export default function RankingClient({ currentUser }: { currentUser: AuthUser }
             return (
               <div key={user.id}>
                 <div onClick={() => setExpanded(isOpen ? null : user.id)}
-                  className={`flex items-center justify-between p-4 cursor-pointer transition-all ${
-                    isOpen ? 'rounded-t-xl' : 'rounded-xl'
+                  className={`flex items-center justify-between p-4 rounded-xl cursor-pointer transition-all ${
+                    isOpen ? 'rounded-b-none' : ''
                   } ${
                     isFirst ? 'bg-gradient-to-r from-yellow-600/20 to-slate-800 border border-yellow-500/50'
                     : isLast ? 'bg-red-950/40 border-2 border-dashed border-red-500/40'
@@ -64,10 +117,12 @@ export default function RankingClient({ currentUser }: { currentUser: AuthUser }
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className={`text-2xl font-black ${
-                      isLast ? 'text-red-400' : isFirst ? 'text-yellow-300' : 'text-white'
-                    }`}>{user.total_points}</span>
-                    <span className="text-xs text-slate-500">pts</span>
+                    <div>
+                      <div className={`text-2xl font-black ${
+                        isLast ? 'text-red-400' : isFirst ? 'text-yellow-300' : 'text-white'
+                      }`}>{user.total_points}</div>
+                      <div className="text-[10px] text-slate-500 text-right">pts</div>
+                    </div>
                     {isOpen ? <ChevronUp size={14} className="text-slate-500"/> : <ChevronDown size={14} className="text-slate-500"/>}
                   </div>
                 </div>
@@ -99,18 +154,34 @@ export default function RankingClient({ currentUser }: { currentUser: AuthUser }
           })}
         </div>
 
-        <div className="mt-8 bg-slate-800 border border-slate-700 rounded-xl p-4">
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2"><Skull size={12}/> Reglas del Caos</p>
-          <ul className="text-xs text-slate-400 space-y-1">
-            <li>• 0-0 exacto: <span className="text-green-400">+8 pts</span></li>
-            <li>• Marcador exacto: <span className="text-green-400">+3 pts</span></li>
-            <li>• Resultado (1X2): <span className="text-green-400">+1 pt</span></li>
-            <li>• Espejo (2-1 → 1-2): <span className="text-blue-400">+2 pts consolación</span></li>
-            <li>• Cuartos / Semis / Final: <span className="text-orange-400">×2</span></li>
-            <li>• Comodín por jornada: <span className="text-yellow-400">×2 extra</span></li>
-            <li>• Modo Supervivencia (último 10%): <span className="text-red-400">×1.5 todo</span></li>
-          </ul>
-        </div>
+        {/* Rules section */}
+        <button onClick={() => setShowRules(!showRules)}
+          className="w-full flex items-center justify-center gap-2 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-sm font-bold text-slate-300 transition-colors mb-4">
+          <Skull size={15} className="text-purple-400" />
+          {showRules ? 'Ocultar reglas' : 'Ver todas las reglas del Caos'}
+        </button>
+
+        {showRules && (
+          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5 space-y-5">
+            {RULES_SECTIONS.map(section => (
+              <div key={section.title}>
+                <h3 className="text-sm font-black text-slate-200 uppercase tracking-wider mb-3">{section.title}</h3>
+                <ul className="space-y-2">
+                  {section.items.map((item, i) => (
+                    <li key={i} className="flex items-start gap-2 text-xs">
+                      <span className="text-slate-600 mt-0.5">•</span>
+                      <span className="flex-1">
+                        <span className="text-slate-200 font-semibold">{item.label}</span>
+                        {item.pts && <span className="ml-2 text-orange-400 font-black">{item.pts}</span>}
+                        {item.detail && <p className="text-slate-500 mt-0.5">{item.detail}</p>}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        )}
       </main>
     </div>
   )

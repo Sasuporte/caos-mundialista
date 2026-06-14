@@ -15,7 +15,6 @@ export async function POST(req: NextRequest) {
   const db = createServerClient()
 
   if (mode === 'register') {
-    // Validate invite code
     const required = process.env.INVITE_CODE
     if (required && inviteCode?.trim() !== required.trim()) {
       return NextResponse.json({ error: 'Código de invitación incorrecto.' }, { status: 403 })
@@ -24,9 +23,15 @@ export async function POST(req: NextRequest) {
     const { data: existing } = await db.from('users').select('id').eq('username', username.trim()).maybeSingle()
     if (existing) return NextResponse.json({ error: 'Ese apodo ya está en uso.' }, { status: 409 })
 
+    // Fair play: 1 punto por cada partido ya finalizado
+    const { count } = await db.from('matches').select('*', { count: 'exact', head: true }).eq('status', 'finished')
+    const pointsBase = count ?? 0
+
     const { data: pinHash } = await db.rpc('hash_pin', { plain_pin: pin })
     const { data: user, error } = await db
-      .from('users').insert({ username: username.trim(), pin_hash: pinHash }).select().single()
+      .from('users')
+      .insert({ username: username.trim(), pin_hash: pinHash, points_base: pointsBase })
+      .select().single()
     if (error || !user) return NextResponse.json({ error: 'Error al registrar.' }, { status: 500 })
 
     const { data: session } = await db.from('sessions').insert({ user_id: user.id }).select('token').single()
@@ -34,7 +39,7 @@ export async function POST(req: NextRequest) {
     return buildResponse(session.token)
   }
 
-  // LOGIN — no invite code required
+  // LOGIN
   const { data: user } = await db.from('users')
     .select('id, pin_hash').eq('username', username.trim()).maybeSingle()
   if (!user) return NextResponse.json({ error: 'Usuario no encontrado.' }, { status: 404 })

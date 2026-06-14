@@ -8,7 +8,7 @@ export async function GET() {
   const db = createServerClient()
 
   const [usersRes, matchesRes, predsRes, ltBetsRes, ltResultsRes, trapRes] = await Promise.all([
-    db.from('users').select('id, username, is_admin, avatar_color'),
+    db.from('users').select('id, username, is_admin, avatar_color, points_base'),
     db.from('matches').select('*'),
     db.from('predictions').select('*'),
     db.from('long_term_bets').select('*'),
@@ -24,8 +24,12 @@ export async function GET() {
   const trapCards = trapRes.data ?? []
 
   const ranked = users.map(user => {
-    let total = 0
+    let total = user.points_base ?? 0
     const breakdown: { label: string; points: number }[] = []
+
+    if (user.points_base > 0) {
+      breakdown.push({ label: '🛡️ Fair Play (ingreso tardío)', points: user.points_base })
+    }
 
     predictions.filter(p => p.user_id === user.id).forEach(pred => {
       const match = matches.find(m => m.id === pred.match_id)
