@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { calculateMatchPoints, calculateLongTermPoints } from '@/lib/scoring'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   const db = createServerClient()
 
@@ -46,7 +48,6 @@ export async function GET() {
       }
     }
 
-    // Trap card effects
     trapCards.filter(tc => tc.attacker_id === user.id && tc.succeeded).forEach(tc => {
       const pts = tc.points_stolen ?? 0
       if (pts > 0) { total += pts; breakdown.push({ label: '🂷 Carta Trampa (robaste)', points: pts }) }
