@@ -7,14 +7,17 @@ import type { AuthUser } from '@/lib/types'
 import { useSwipeNav } from '@/lib/hooks/useSwipeNav'
 
 const TABS = [
-  { href: '/partidos', label: '⚽ Partidos', key: 'partidos' },
-  { href: '/ranking', label: '🏆 Ranking', key: 'ranking' },
-  { href: '/bonus', label: '🎯 Bonus', key: 'bonus' },
+  { href: '/partidos', label: '⚽ Partidos', short: '⚽', key: 'partidos' },
+  { href: '/ranking', label: '🏆 Ranking', short: '🏆', key: 'ranking' },
+  { href: '/bonus', label: '🎯 Bonus', short: '🎯', key: 'bonus' },
+  { href: '/historial', label: '📊 Historial', short: '📊', key: 'historial' },
 ]
 
 export default function Header({ currentUser, activeTab }: { currentUser: AuthUser; activeTab?: string }) {
   const router = useRouter()
-  const tabs = currentUser.is_admin ? [...TABS, { href: '/admin', label: '⚙️ Admin', key: 'admin' }] : TABS
+  const tabs = currentUser.is_admin
+    ? [...TABS, { href: '/admin', label: '⚙️ Admin', short: '⚙️', key: 'admin' }]
+    : TABS
 
   useSwipeNav(activeTab ?? 'partidos', currentUser.is_admin)
 
@@ -48,22 +51,17 @@ export default function Header({ currentUser, activeTab }: { currentUser: AuthUs
           <button onClick={logout} className="text-xs text-red-400 hover:text-red-300">Salir</button>
         </div>
       </div>
-
-      {/* Mobile nav con indicador de swipe */}
-      <div className="md:hidden border-t border-slate-700 flex relative">
-        {tabs.map(({ href, label, key }) => (
+      {/* Mobile nav */}
+      <div className="md:hidden border-t border-slate-700 flex">
+        {tabs.map(({ href, short, key }) => (
           <Link key={href} href={href}
-            className={`flex-1 py-2 text-center text-xs font-bold transition-colors ${
-              activeTab === key
-                ? 'text-orange-400 border-b-2 border-orange-500 bg-orange-600/10'
-                : 'text-slate-500'
-            }`}>{label}</Link>
+            className={`flex-1 py-2 text-center text-base transition-colors ${
+              activeTab === key ? 'border-b-2 border-orange-500 bg-orange-600/10' : 'text-slate-600'
+            }`}>{short}</Link>
         ))}
       </div>
-
-      {/* Swipe hint — solo en mobile, desaparece tras primer uso */}
-      <div className="md:hidden text-center py-0.5 bg-slate-900/60">
-        <span className="text-[10px] text-slate-600">← desliza para navegar →</span>
+      <div className="md:hidden text-center py-0.5 bg-slate-900/50">
+        <span className="text-[10px] text-slate-700">← desliza para navegar →</span>
       </div>
     </header>
   )
