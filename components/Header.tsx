@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Flame } from 'lucide-react'
 import type { AuthUser } from '@/lib/types'
+import { useSwipeNav } from '@/lib/hooks/useSwipeNav'
 
 const TABS = [
   { href: '/partidos', label: '⚽ Partidos', key: 'partidos' },
@@ -13,14 +14,15 @@ const TABS = [
 
 export default function Header({ currentUser, activeTab }: { currentUser: AuthUser; activeTab?: string }) {
   const router = useRouter()
+  const tabs = currentUser.is_admin ? [...TABS, { href: '/admin', label: '⚙️ Admin', key: 'admin' }] : TABS
+
+  useSwipeNav(activeTab ?? 'partidos', currentUser.is_admin)
 
   const logout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' })
     router.push('/login')
     router.refresh()
   }
-
-  const tabs = currentUser.is_admin ? [...TABS, { href: '/admin', label: '⚙️ Admin', key: 'admin' }] : TABS
 
   return (
     <header className="bg-slate-800 border-b border-slate-700 sticky top-0 z-50">
@@ -46,13 +48,22 @@ export default function Header({ currentUser, activeTab }: { currentUser: AuthUs
           <button onClick={logout} className="text-xs text-red-400 hover:text-red-300">Salir</button>
         </div>
       </div>
-      <div className="md:hidden border-t border-slate-700 flex">
+
+      {/* Mobile nav con indicador de swipe */}
+      <div className="md:hidden border-t border-slate-700 flex relative">
         {tabs.map(({ href, label, key }) => (
           <Link key={href} href={href}
-            className={`flex-1 py-2 text-center text-xs font-bold ${
-              activeTab === key ? 'text-orange-400 border-b-2 border-orange-500 bg-orange-600/10' : 'text-slate-500'
+            className={`flex-1 py-2 text-center text-xs font-bold transition-colors ${
+              activeTab === key
+                ? 'text-orange-400 border-b-2 border-orange-500 bg-orange-600/10'
+                : 'text-slate-500'
             }`}>{label}</Link>
         ))}
+      </div>
+
+      {/* Swipe hint — solo en mobile, desaparece tras primer uso */}
+      <div className="md:hidden text-center py-0.5 bg-slate-900/60">
+        <span className="text-[10px] text-slate-600">← desliza para navegar →</span>
       </div>
     </header>
   )
