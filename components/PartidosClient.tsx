@@ -1,44 +1,72 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { Flame, Radio } from 'lucide-react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { Flame, Radio, AlertCircle } from 'lucide-react'
 import Link from 'next/link'
 import type { AuthUser, Match, Prediction } from '@/lib/types'
 import Header from './Header'
 import MatchCard from './MatchCard'
 
+interface TrapCardStatus {
+  id: string
+  match_id: string
+  target_id: string
+  triggered: boolean
+}
+
+interface RankedUser {
+  id: string
+  username: string
+  total_points: number
+}
+
 function getActiveMatchday(matches: Match[]): number | null {
-  // 1. Matchday with any live match
   const live = matches.find(m => m.status === 'live')
   if (live) return live.matchday
-
-  // 2. Matchday with the most recently finished match
-  const finished = [...matches]
-    .filter(m => m.status === 'finished')
+  const finished = [...matches].filter(m => m.status === 'finished')
     .sort((a, b) => new Date(b.kick_off_time).getTime() - new Date(a.kick_off_time).getTime())
   if (finished.length > 0) return finished[0].matchday
-
-  // 3. Matchday with the next upcoming match
-  const upcoming = [...matches]
-    .filter(m => m.status === 'pending')
+  const upcoming = [...matches].filter(m => m.status === 'pending')
     .sort((a, b) => new Date(a.kick_off_time).getTime() - new Date(b.kick_off_time).getTime())
   if (upcoming.length > 0) return upcoming[0].matchday
-
   return null
+}
+
+const PHASE_LABEL: Record<string, string> = {
+  grupos: 'Grupos', octavos: 'Octavos', cuartos: 'Cuartos ×2',
+  semis: 'Semi ×2', final: 'Final ×2',
 }
 
 export default function PartidosClient({ currentUser }: { currentUser: AuthUser }) {
   const [matches, setMatches] = useState<Match[]>([])
   const [predMap, setPredMap] = useState<Record<string, Prediction>>({})
   const [jokers, setJokers] = useState<Record<number, string>>({})
+  const [trapCard, setTrapCard] = useState<TrapCardStatus | null>(null)
+  const [leader, setLeader] = useState<RankedUser | null>(null)
+  const [isCurrentUserLeader, setIsCurrentUserLeader] = useState(false)
   const [loading, setLoading] = useState(true)
   const [openDays, setOpenDays] = useState<Set<number>>(new Set())
+  const intervalRef = useRef<NodeJS.Timeout | null>(null)
 
-  const loadData = useCallback(async () => {
-    const [mRes, pRes] = await Promise.all([fetch('/api/matches'), fetch('/api/predictions')])
+  const loadData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true)
+    const [mRes, pRes, tcRes, rankRes] = await Promise.all([
+      fetch('/api/matches'),
+      fetch('/api/predictions'),
+      fetch('/api/trap-cards'),
+      fetch('/api/ranking'),
+    ])
     const mData: Match[] = await mRes.json()
     const pData: Prediction[] = await pRes.json()
+    const tcData = await tcRes.json()
+    const rankData: RankedUser[] = await rankRes.json()
+
     setMatches(mData)
+    setTrapCard(tcData)
+
+    const myRank = rankData.findIndex(u => u.id === currentUser.id)
+    setIsCurrentUserLeader(myRank === 0)
+    setLeader(myRank === 0 ? (rankData[1] ?? null) : (rankData[0] ?? null))
 
     const pm: Record<string, Prediction> = {}
     const jk: Record<number, string> = {}
@@ -52,14 +80,27 @@ export default function PartidosClient({ currentUser }: { currentUser: AuthUser 
     setPredMap(pm)
     setJokers(jk)
 
-    // Auto-open active matchday
-    const active = getActiveMatchday(mData)
-    if (active !== null) setOpenDays(new Set([active]))
+    if (!silent) {
+      const active = getActiveMatchday(mData)
+      if (active !== null) setOpenDays(new Set([active]))
+    }
+
+    // Auto-refresh every 60s when there are live matches
+    const hasLive = mData.some(m => m.status === 'live')
+    if (hasLive && !intervalRef.current) {
+      intervalRef.current = setInterval(() => loadData(true), 60000)
+    } else if (!hasLive && intervalRef.current) {
+      clearInterval(intervalRef.current)
+      intervalRef.current = null
+    }
 
     setLoading(false)
-  }, [])
+  }, [currentUser.id])
 
-  useEffect(() => { loadData() }, [loadData])
+  useEffect(() => {
+    loadData()
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
+  }, [loadData])
 
   const handleSave = async (matchId: string, home: number, away: number, isJoker: boolean) => {
     await fetch('/api/predictions', {
@@ -67,7 +108,18 @@ export default function PartidosClient({ currentUser }: { currentUser: AuthUser 
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ match_id: matchId, home_score: home, away_score: away, is_joker: isJoker }),
     })
-    await loadData()
+    await loadData(true)
+  }
+
+  const handleTrapCard = async (matchId: string) => {
+    const res = await fetch('/api/trap-cards', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ match_id: matchId }),
+    })
+    const data = await res.json()
+    if (!res.ok) { alert(data.error); return }
+    setTrapCard(data)
   }
 
   const toggleDay = (day: number) => {
@@ -78,6 +130,12 @@ export default function PartidosClient({ currentUser }: { currentUser: AuthUser 
       return next
     })
   }
+
+  const pendingCount = matches.filter(m => {
+    if (m.status !== 'pending') return false
+    const hoursUntil = (new Date(m.kick_off_time).getTime() - Date.now()) / 3600000
+    return hoursUntil > 0 && hoursUntil <= 48 && !predMap[m.id]
+  }).length
 
   if (loading) return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center">
@@ -104,27 +162,41 @@ export default function PartidosClient({ currentUser }: { currentUser: AuthUser 
     .filter(m => m.status === 'finished')
     .sort((a, b) => new Date(b.kick_off_time).getTime() - new Date(a.kick_off_time).getTime())
     .slice(0, 1)
-
   const highlightedMatches = liveMatches.length > 0 ? liveMatches : recentFinished
 
-  const PHASE_LABEL: Record<string, string> = {
-    grupos: 'Grupos', octavos: 'Octavos', cuartos: 'Cuartos ×2',
-    semis: 'Semi ×2', final: 'Final ×2',
+  const matchCardProps = {
+    hasUsedTrapCard: !!trapCard,
+    isLeader: isCurrentUserLeader,
+    leaderName: leader?.username,
+    onTrapCard: handleTrapCard,
   }
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-200 pb-20">
       <Header currentUser={currentUser} activeTab="partidos" />
+
+      {/* Alerta predicciones pendientes */}
+      {pendingCount > 0 && (
+        <div className="max-w-5xl mx-auto px-4 pt-4">
+          <div className="flex items-center gap-2 bg-orange-950/40 border border-orange-500/30 rounded-xl px-4 py-2.5 text-sm">
+            <AlertCircle size={15} className="text-orange-400 shrink-0" />
+            <span className="text-orange-300">
+              Tienes <strong>{pendingCount} partido{pendingCount > 1 ? 's' : ''}</strong> en las próximas 48h sin predicción.
+            </span>
+          </div>
+        </div>
+      )}
+
       <main className="max-w-5xl mx-auto px-4 py-6 space-y-6">
 
-        {/* LIVE / RECIENTE */}
+        {/* EN VIVO / ÚLTIMO RESULTADO */}
         {highlightedMatches.length > 0 && (
           <section>
             <div className="flex items-center gap-2 mb-3">
               {liveMatches.length > 0 ? (
-                <>
-                  <Radio size={14} className="text-red-400 animate-pulse" />
+                <><Radio size={14} className="text-red-400 animate-pulse" />
                   <span className="text-xs font-black text-red-400 uppercase tracking-widest">En juego ahora</span>
+                  <span className="text-xs text-slate-500">— se actualiza cada 60 seg</span>
                 </>
               ) : (
                 <span className="text-xs font-black text-slate-400 uppercase tracking-widest">⏰ Último resultado</span>
@@ -132,14 +204,12 @@ export default function PartidosClient({ currentUser }: { currentUser: AuthUser 
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {highlightedMatches.map(match => (
-                <div key={match.id} className={`rounded-2xl ${
-                  liveMatches.length > 0 ? 'ring-2 ring-red-500/50 shadow-[0_0_20px_rgba(239,68,68,0.15)]' : ''
-                }`}>
-                  <MatchCard
-                    match={match}
-                    prediction={predMap[match.id]}
+                <div key={match.id} className={liveMatches.length > 0 ? 'ring-2 ring-red-500/50 rounded-2xl shadow-[0_0_20px_rgba(239,68,68,0.12)]' : ''}>
+                  <MatchCard match={match} prediction={predMap[match.id]}
                     isJoker={jokers[match.matchday] === match.id}
                     onSave={handleSave}
+                    trapCardMatchId={trapCard?.match_id}
+                    {...matchCardProps}
                   />
                 </div>
               ))}
@@ -161,11 +231,8 @@ export default function PartidosClient({ currentUser }: { currentUser: AuthUser 
 
             return (
               <div key={day} className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
-                {/* Accordion header */}
-                <button
-                  onClick={() => toggleDay(day)}
-                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-700/50 transition-colors text-left"
-                >
+                <button onClick={() => toggleDay(day)}
+                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-700/50 transition-colors text-left">
                   <div className="flex items-center gap-3">
                     <span className="font-black text-white">Jornada {day}</span>
                     <span className="text-xs text-slate-500">{phase}</span>
@@ -176,29 +243,29 @@ export default function PartidosClient({ currentUser }: { currentUser: AuthUser 
                     )}
                   </div>
                   <div className="flex items-center gap-3 text-xs text-slate-500">
-                    <span>{predicted}/{dayMatches.length} apostado</span>
+                    <span className={predicted === dayMatches.length ? 'text-green-400' : predicted > 0 ? 'text-orange-400' : ''}>
+                      {predicted}/{dayMatches.length} apostado
+                    </span>
                     <span className={`w-2 h-2 rounded-full ${
                       live > 0 ? 'bg-red-400 animate-pulse' :
                       finished === dayMatches.length ? 'bg-green-500' :
-                      pending === dayMatches.length ? 'bg-slate-600' :
-                      'bg-orange-400'
+                      pending === dayMatches.length ? 'bg-slate-600' : 'bg-orange-400'
                     }`} />
                     <span className={`transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}>▾</span>
                   </div>
                 </button>
 
-                {/* Accordion content */}
                 {isOpen && (
                   <div className="p-4 pt-2 border-t border-slate-700 grid grid-cols-1 md:grid-cols-2 gap-4">
                     {dayMatches
                       .sort((a, b) => new Date(a.kick_off_time).getTime() - new Date(b.kick_off_time).getTime())
                       .map(match => (
-                        <MatchCard
-                          key={match.id}
-                          match={match}
+                        <MatchCard key={match.id} match={match}
                           prediction={predMap[match.id]}
                           isJoker={jokers[match.matchday] === match.id}
                           onSave={handleSave}
+                          trapCardMatchId={trapCard?.match_id}
+                          {...matchCardProps}
                         />
                       ))}
                   </div>
