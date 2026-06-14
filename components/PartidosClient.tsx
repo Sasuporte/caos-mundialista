@@ -49,7 +49,7 @@ export default function PartidosClient({ currentUser }: { currentUser: AuthUser 
     </div>
   )
 
-  const days = [...new Set(matches.map(m => m.matchday))].sort((a, b) => a - b)
+  const days = Array.from(new Set(matches.map(m => m.matchday))).sort((a, b) => a - b)
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-200 pb-20">
