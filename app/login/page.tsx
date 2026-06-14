@@ -8,6 +8,7 @@ export default function LoginPage() {
   const router = useRouter()
   const [username, setUsername] = useState('')
   const [pin, setPin] = useState('')
+  const [inviteCode, setInviteCode] = useState('')
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -21,7 +22,7 @@ export default function LoginPage() {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: username.trim(), pin, mode }),
+        body: JSON.stringify({ username: username.trim(), pin, mode, inviteCode }),
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error || 'Error al ingresar.'); return }
@@ -61,6 +62,7 @@ export default function LoginPage() {
               className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-orange-500"
               placeholder="El Tío Táctico" required maxLength={32} />
           </div>
+
           <div>
             <label className="block text-sm font-medium text-slate-400 mb-2">PIN (4-6 dígitos)</label>
             <input type="password" inputMode="numeric" value={pin}
@@ -68,7 +70,20 @@ export default function LoginPage() {
               className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-orange-500 tracking-widest text-center text-2xl"
               placeholder="••••" required />
           </div>
+
+          {mode === 'register' && (
+            <div>
+              <label className="block text-sm font-medium text-slate-400 mb-2">
+                🔑 Código de invitación
+              </label>
+              <input type="text" value={inviteCode} onChange={e => setInviteCode(e.target.value)}
+                className="w-full bg-slate-900 border border-orange-500/50 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-orange-500"
+                placeholder="Pídele el código al organizador" required />
+            </div>
+          )}
+
           {error && <p className="text-red-400 text-sm text-center">{error}</p>}
+
           <button type="submit" disabled={loading}
             className="w-full bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-500 hover:to-red-500 text-white font-bold py-3 rounded-lg transition-transform hover:scale-105 active:scale-95 disabled:opacity-50">
             {loading ? 'Cargando...' : mode === 'login' ? 'Entrar a la Cancha' : 'Crear Cuenta'}
@@ -85,7 +100,7 @@ export default function LoginPage() {
             <li>• Marcador exacto: <span className="text-green-400">+3 pts</span></li>
             <li>• Resultado correcto (1X2): <span className="text-green-400">+1 pt</span></li>
             <li>• Marcador espejo (ej: 2-1 → 1-2): <span className="text-blue-400">+2 pts consolación</span></li>
-            <li>• Cuartos / Semis / Final: <span className="text-orange-400">x2 todo</span></li>
+            <li>• Cuartos / Semis / Final: <span className="text-orange-400">×2 todo</span></li>
           </ul>
         </div>
       </div>
