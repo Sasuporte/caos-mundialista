@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Flame, RefreshCw, Plus, Copy, Trash2, Ban, UserCheck, Shield, Zap, Lock, Unlock } from 'lucide-react'
+import { Flame, RefreshCw, Plus, Copy, Trash2, Ban, UserCheck, Shield, Zap, Lock, Unlock, RotateCcw } from 'lucide-react'
 import type { AuthUser, Match } from '@/lib/types'
 import Header from './Header'
 
@@ -26,6 +26,8 @@ export default function AdminClient({ currentUser }: { currentUser: AuthUser }) 
   const [events, setEvents] = useState<ChaosEvent[]>([])
   const [bonusOpen, setBonusOpen] = useState(false)
   const [togglingBonus, setTogglingBonus] = useState(false)
+  const [recalculating, setRecalculating] = useState(false)
+  const [recalcResult, setRecalcResult] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
@@ -68,11 +70,27 @@ export default function AdminClient({ currentUser }: { currentUser: AuthUser }) 
     setTogglingBonus(false)
   }
 
+  const recalculatePoints = async () => {
+    if (!window.confirm('¿Recalcular los puntos de TODAS las predicciones en partidos finalizados? Esto sobreescribirá los valores actuales.')) return
+    setRecalculating(true)
+    setRecalcResult(null)
+    const res = await fetch('/api/admin/recalculate', { method: 'POST' })
+    const data = await res.json()
+    if (res.ok) {
+      setRecalcResult(`✅ ${data.updated} predicciones recalculadas en ${data.matches} partidos.`)
+    } else {
+      setRecalcResult(`❌ Error: ${data.error}`)
+    }
+    setRecalculating(false)
+  }
+
   const syncFromApi = async () => {
     setSyncing(true); setSyncResult(null)
     const res = await fetch('/api/admin/sync', { method: 'POST' })
     const data = await res.json()
-    setSyncResult(res.ok ? `✅ ${data.total} partidos — ${data.synced} nuevos, ${data.updated} actualizados` : `❌ ${data.error}`)
+    setSyncResult(res.ok
+      ? `✅ ${data.total} partidos — ${data.synced} nuevos, ${data.updated} actualizados, ${data.pointsRecalculated ?? 0} predicciones recalculadas`
+      : `❌ ${data.error}`)
     if (res.ok) await loadAll()
     setSyncing(false)
   }
@@ -139,11 +157,18 @@ export default function AdminClient({ currentUser }: { currentUser: AuthUser }) 
         {/* SYNC */}
         <section className="bg-gradient-to-br from-blue-900/30 to-slate-800 border border-blue-500/30 rounded-xl p-5">
           <h2 className="text-sm font-bold text-blue-300 uppercase tracking-wider mb-3">🔄 Sincronizar desde API-Football</h2>
-          <button onClick={syncFromApi} disabled={syncing} className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg text-sm disabled:opacity-50">
-            <RefreshCw size={15} className={syncing ? 'animate-spin' : ''} />
-            {syncing ? 'Sincronizando...' : 'Sincronizar ahora'}
-          </button>
+          <div className="flex gap-2 flex-wrap">
+            <button onClick={syncFromApi} disabled={syncing} className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg text-sm disabled:opacity-50">
+              <RefreshCw size={15} className={syncing ? 'animate-spin' : ''} />
+              {syncing ? 'Sincronizando...' : 'Sincronizar ahora'}
+            </button>
+            <button onClick={recalculatePoints} disabled={recalculating} className="flex items-center gap-2 px-4 py-2.5 bg-orange-700 hover:bg-orange-600 text-white font-bold rounded-lg text-sm disabled:opacity-50">
+              <RotateCcw size={15} className={recalculating ? 'animate-spin' : ''} />
+              {recalculating ? 'Recalculando...' : 'Recalcular Puntos'}
+            </button>
+          </div>
           {syncResult && <p className="mt-3 text-sm text-slate-300 bg-slate-700/50 px-3 py-2 rounded-lg">{syncResult}</p>}
+          {recalcResult && <p className="mt-2 text-sm text-slate-300 bg-slate-700/50 px-3 py-2 rounded-lg">{recalcResult}</p>}
         </section>
 
         {/* BONUS LOCK */}
@@ -165,13 +190,9 @@ export default function AdminClient({ currentUser }: { currentUser: AuthUser }) 
                   : 'Desbloquea para que los usuarios completen sus predicciones.'}
               </p>
             </div>
-            <button
-              onClick={toggleBonus}
-              disabled={togglingBonus}
+            <button onClick={toggleBonus} disabled={togglingBonus}
               className={`flex items-center gap-2 px-4 py-2 text-sm font-bold rounded-lg shrink-0 disabled:opacity-50 ${
-                bonusOpen
-                  ? 'bg-red-700 hover:bg-red-600 text-white'
-                  : 'bg-green-700 hover:bg-green-600 text-white'
+                bonusOpen ? 'bg-red-700 hover:bg-red-600 text-white' : 'bg-green-700 hover:bg-green-600 text-white'
               }`}>
               {togglingBonus ? '...' : bonusOpen ? <><Lock size={13}/> Bloquear</> : <><Unlock size={13}/> Desbloquear</>}
             </button>
@@ -201,7 +222,6 @@ export default function AdminClient({ currentUser }: { currentUser: AuthUser }) 
           <button onClick={createEvent} className="w-full bg-purple-700 hover:bg-purple-600 text-white font-bold py-2 rounded-lg text-sm flex items-center justify-center gap-2">
             <Plus size={14} /> Crear Evento (pendiente de validación)
           </button>
-
           {events.length > 0 && (
             <div className="mt-4 space-y-2">
               {events.map(ev => (
@@ -219,9 +239,7 @@ export default function AdminClient({ currentUser }: { currentUser: AuthUser }) 
                         className="px-3 py-1.5 bg-green-700 hover:bg-green-600 text-white text-xs font-bold rounded-lg disabled:opacity-50">
                         {validating === ev.id ? '...' : '✓ Validar'}
                       </button>
-                    ) : (
-                      <span className="text-xs text-green-400">✓ Distribuido</span>
-                    )}
+                    ) : <span className="text-xs text-green-400">✓ Distribuido</span>}
                   </div>
                 </div>
               ))}
@@ -262,7 +280,7 @@ export default function AdminClient({ currentUser }: { currentUser: AuthUser }) 
 
         {/* USER MANAGEMENT */}
         <section className="bg-slate-800 border border-slate-700 rounded-xl p-5">
-          <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-4 flex items-center gap-2"><Ban size={14} className="text-red-400" /> Gestión de Usuarios</h2>
+          <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-4 flex items-center gap-2"><Ban size={14} className="text-red-400" /> Gestión de Usuarios ({users.length})</h2>
           <div className="space-y-2">
             {users.map(u => (
               <div key={u.id} className={`flex items-center justify-between p-3 rounded-lg border ${

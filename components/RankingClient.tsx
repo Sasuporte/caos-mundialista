@@ -50,25 +50,31 @@ export default function RankingClient({ currentUser }: { currentUser: AuthUser }
   const debounce = useRef<NodeJS.Timeout | null>(null)
 
   const fetchRanking = async () => {
-    fetch('/api/ranking').then(r => r.json()).then(d => { setRanking(d); setLoading(false) })
+    fetch('/api/ranking').then(r => r.json()).then(d => {
+      if (Array.isArray(d)) { setRanking(d) }
+      setLoading(false)
+    })
+  }
+
+  const triggerRefresh = () => {
+    if (debounce.current) clearTimeout(debounce.current)
+    debounce.current = setTimeout(fetchRanking, 800)
+    setLive(true)
+    setTimeout(() => setLive(false), 2000)
   }
 
   useEffect(() => {
     fetchRanking()
     const channel = supabase
       .channel('ranking-live')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'predictions' }, () => {
-        if (debounce.current) clearTimeout(debounce.current)
-        debounce.current = setTimeout(fetchRanking, 800)
-        setLive(true); setTimeout(() => setLive(false), 2000)
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, () => {
-        if (debounce.current) clearTimeout(debounce.current)
-        debounce.current = setTimeout(fetchRanking, 800)
-        setLive(true); setTimeout(() => setLive(false), 2000)
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'predictions' }, triggerRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, triggerRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, triggerRefresh)
       .subscribe()
-    return () => { if (debounce.current) clearTimeout(debounce.current); supabase.removeChannel(channel) }
+    return () => {
+      if (debounce.current) clearTimeout(debounce.current)
+      supabase.removeChannel(channel)
+    }
   }, [])
 
   if (loading) return (

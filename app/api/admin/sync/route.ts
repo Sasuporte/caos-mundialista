@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { getSessionUser } from '@/lib/auth'
+import { calculateMatchPoints } from '@/lib/scoring'
 
 const FD_URL = 'https://api.football-data.org/v4'
 const WC_CODE = 'WC'
@@ -51,6 +52,7 @@ async function runSync() {
   const db = createServerClient()
   let synced = 0
   let updated = 0
+  let pointsRecalculated = 0
 
   for (const m of matches) {
     const phase = mapPhase(m.stage)
@@ -69,19 +71,36 @@ async function runSync() {
     }
 
     const { data: existing } = await db
-      .from('matches').select('id')
+      .from('matches').select('id, status')
       .eq('api_match_id', String(m.id)).maybeSingle()
+
+    let matchId: string | null = null
 
     if (existing) {
       await db.from('matches').update(payload).eq('id', existing.id)
+      matchId = existing.id
       updated++
     } else {
-      await db.from('matches').insert(payload)
+      const { data: inserted } = await db.from('matches').insert(payload).select('id').single()
+      matchId = inserted?.id ?? null
       synced++
+    }
+
+    // Si el partido acaba de terminar o ya estaba finalizado con score, recalcular puntos
+    if (matchId && status === 'finished' && payload.home_score !== null && payload.away_score !== null) {
+      const matchForCalc = { ...payload, id: matchId, status: 'finished' as const }
+      const { data: preds } = await db.from('predictions').select('*').eq('match_id', matchId)
+      if (preds && preds.length > 0) {
+        await Promise.all(preds.map(p => {
+          const pts = calculateMatchPoints(p as any, matchForCalc as any)
+          return db.from('predictions').update({ points_earned: pts }).eq('id', p.id)
+        }))
+        pointsRecalculated += preds.length
+      }
     }
   }
 
-  return { synced, updated, total: matches.length }
+  return { synced, updated, total: matches.length, pointsRecalculated }
 }
 
 export async function POST(req: NextRequest) {
