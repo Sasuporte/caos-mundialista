@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ShieldAlert, Zap, Skull } from 'lucide-react'
+import { ShieldAlert, Zap, Skull, Save } from 'lucide-react'
 import type { Match, Prediction } from '@/lib/types'
 import CountdownTimer from './CountdownTimer'
 
@@ -35,6 +35,7 @@ export default function MatchCard({
   const [localHome, setLocalHome] = useState(prediction?.home_score != null ? String(prediction.home_score) : '')
   const [localAway, setLocalAway] = useState(prediction?.away_score != null ? String(prediction.away_score) : '')
   const [saving, setSaving] = useState(false)
+  const [justSaved, setJustSaved] = useState(false)
   const [trapping, setTrapping] = useState(false)
 
   const save = async (joker?: boolean) => {
@@ -42,6 +43,8 @@ export default function MatchCard({
     setSaving(true)
     await onSave(match.id, Number(localHome), Number(localAway), joker ?? isJoker)
     setSaving(false)
+    setJustSaved(true)
+    setTimeout(() => setJustSaved(false), 2000)
   }
 
   const handleTrapCard = async () => {
@@ -55,6 +58,7 @@ export default function MatchCard({
   const isHighPhase = ['cuartos', 'semis', 'final'].includes(match.phase)
   const isTrapActive = trapCardMatchId === match.id
   const canShowTrap = !locked && !isLeader && match.status === 'pending'
+  const hasBothInputs = localHome !== '' && localAway !== ''
 
   return (
     <div className={`bg-slate-800 rounded-2xl p-5 border transition-all ${
@@ -80,7 +84,17 @@ export default function MatchCard({
         )}
       </div>
 
-      <div className="flex justify-between items-center gap-2 mb-3">
+      {/* Marcador real cuando está en juego */}
+      {match.status === 'live' && match.home_score !== null && (
+        <div className="flex items-center justify-center gap-2 mb-3 bg-red-950/40 border border-red-700/30 rounded-lg px-3 py-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+          <span className="text-xs text-red-300 font-bold">
+            Marcador actual: {match.home_score} – {match.away_score}
+          </span>
+        </div>
+      )}
+
+      <div className="flex justify-between items-center gap-2 mb-1">
         <p className="flex-1 text-center text-sm font-bold leading-tight">{match.home_team}</p>
         <div className="flex items-center gap-1 shrink-0">
           <input type="number" min={0} max={20}
@@ -106,8 +120,22 @@ export default function MatchCard({
         <p className="flex-1 text-center text-sm font-bold leading-tight">{match.away_team}</p>
       </div>
 
+      {/* Botón explícito Guardar — evita depender solo de onBlur */}
+      {!locked && hasBothInputs && (
+        <button
+          onClick={() => save()}
+          disabled={saving}
+          className={`w-full mt-2 py-1.5 text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+            justSaved
+              ? 'bg-green-700/50 text-green-300 border border-green-700/40'
+              : 'bg-slate-700/60 hover:bg-slate-700 text-slate-300 border border-slate-600'
+          } disabled:opacity-40`}>
+          {saving ? '...' : justSaved ? '✓ Guardado' : <><Save size={11}/> Guardar predicción</>}
+        </button>
+      )}
+
       {match.status === 'finished' && prediction && (
-        <div className="text-center text-xs border-t border-slate-700 pt-2 mt-2">
+        <div className="text-center text-xs border-t border-slate-700 pt-2 mt-3">
           <span className="text-slate-400">Tu apuesta: </span>
           <span className="text-white font-bold">{prediction.home_score}-{prediction.away_score}</span>
           {prediction.points_earned != null && (
@@ -115,6 +143,15 @@ export default function MatchCard({
               prediction.points_earned > 0 ? 'text-green-400' : prediction.points_earned < 0 ? 'text-red-400' : 'text-slate-500'
             }`}>{prediction.points_earned > 0 ? '+' : ''}{prediction.points_earned} pts</span>
           )}
+        </div>
+      )}
+
+      {/* Tu predicción cuando el partido está en juego (locked) */}
+      {match.status === 'live' && prediction && (
+        <div className="text-center text-xs border-t border-slate-700 pt-2 mt-3">
+          <span className="text-slate-400">Tu predicción: </span>
+          <span className="text-white font-bold">{prediction.home_score}-{prediction.away_score}</span>
+          {isJoker && <span className="ml-1 text-yellow-400">⚡ Comodín</span>}
         </div>
       )}
 
@@ -129,7 +166,7 @@ export default function MatchCard({
         <div className={`mt-3 pt-3 border-t border-slate-700 flex gap-2 ${isTrapActive ? 'hidden' : ''}`}>
           <button
             onClick={() => save(!isJoker)}
-            disabled={saving || localHome === '' || localAway === ''}
+            disabled={saving || !hasBothInputs}
             className={`flex-1 py-2 text-xs font-bold rounded-lg flex items-center justify-center gap-1 transition-all disabled:opacity-40 ${
               isJoker ? 'bg-yellow-500 text-black shadow-[0_0_14px_rgba(234,179,8,0.35)]' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
             }`}>

@@ -6,8 +6,13 @@ export async function GET() {
   const user = await getSessionUser()
   if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
   const db = createServerClient()
-  const { data } = await db.from('long_term_bets').select('*').eq('user_id', user.id).maybeSingle()
-  return NextResponse.json(data ?? null)
+
+  const [{ data: bet }, { data: ltResults }] = await Promise.all([
+    db.from('long_term_bets').select('*').eq('user_id', user.id).maybeSingle(),
+    db.from('long_term_results').select('bonus_open').maybeSingle(),
+  ])
+
+  return NextResponse.json({ ...(bet ?? {}), bonus_open: ltResults?.bonus_open ?? false })
 }
 
 export async function POST(req: NextRequest) {
@@ -15,13 +20,20 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
 
   const db = createServerClient()
-  const { data: anyMatch } = await db.from('matches')
-    .select('kick_off_time').order('kick_off_time').limit(1).single()
 
-  if (anyMatch) {
-    const lockoutMs = new Date(anyMatch.kick_off_time).getTime() - 15 * 60 * 1000
-    if (Date.now() >= lockoutMs) {
-      return NextResponse.json({ error: 'Las apuestas de largo plazo están bloqueadas.' }, { status: 403 })
+  // Check admin override first
+  const { data: ltResults } = await db.from('long_term_results').select('bonus_open').maybeSingle()
+  const bonusOpen = ltResults?.bonus_open ?? false
+
+  if (!bonusOpen) {
+    // Time-based lock
+    const { data: anyMatch } = await db.from('matches')
+      .select('kick_off_time').order('kick_off_time').limit(1).single()
+    if (anyMatch) {
+      const lockoutMs = new Date(anyMatch.kick_off_time).getTime() - 15 * 60 * 1000
+      if (Date.now() >= lockoutMs) {
+        return NextResponse.json({ error: 'Las apuestas de largo plazo están bloqueadas.' }, { status: 403 })
+      }
     }
   }
 

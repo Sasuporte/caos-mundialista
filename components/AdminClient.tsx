@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Flame, RefreshCw, Plus, Copy, Trash2, Ban, UserCheck, Shield, Zap } from 'lucide-react'
+import { Flame, RefreshCw, Plus, Copy, Trash2, Ban, UserCheck, Shield, Zap, Lock, Unlock } from 'lucide-react'
 import type { AuthUser, Match } from '@/lib/types'
 import Header from './Header'
 
@@ -24,6 +24,8 @@ export default function AdminClient({ currentUser }: { currentUser: AuthUser }) 
   const [codes, setCodes] = useState<InviteCode[]>([])
   const [users, setUsers] = useState<AdminUser[]>([])
   const [events, setEvents] = useState<ChaosEvent[]>([])
+  const [bonusOpen, setBonusOpen] = useState(false)
+  const [togglingBonus, setTogglingBonus] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
@@ -35,9 +37,10 @@ export default function AdminClient({ currentUser }: { currentUser: AuthUser }) 
   const [validating, setValidating] = useState<string | null>(null)
 
   const loadAll = async () => {
-    const [mRes, cRes, uRes, eRes] = await Promise.all([
+    const [mRes, cRes, uRes, eRes, bRes] = await Promise.all([
       fetch('/api/matches'), fetch('/api/admin/invite-codes'),
       fetch('/api/admin/users'), fetch('/api/admin/chaos-events'),
+      fetch('/api/admin/bonus-lock'),
     ])
     const mData: Match[] = await mRes.json()
     setMatches(mData)
@@ -47,10 +50,23 @@ export default function AdminClient({ currentUser }: { currentUser: AuthUser }) 
     setCodes(await cRes.json())
     setUsers(await uRes.json())
     setEvents(await eRes.json())
+    if (bRes.ok) { const bData = await bRes.json(); setBonusOpen(bData.bonus_open ?? false) }
     setLoading(false)
   }
 
   useEffect(() => { loadAll() }, [])
+
+  const toggleBonus = async () => {
+    setTogglingBonus(true)
+    const newState = !bonusOpen
+    await fetch('/api/admin/bonus-lock', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bonus_open: newState }),
+    })
+    setBonusOpen(newState)
+    setTogglingBonus(false)
+  }
 
   const syncFromApi = async () => {
     setSyncing(true); setSyncResult(null)
@@ -128,6 +144,38 @@ export default function AdminClient({ currentUser }: { currentUser: AuthUser }) 
             {syncing ? 'Sincronizando...' : 'Sincronizar ahora'}
           </button>
           {syncResult && <p className="mt-3 text-sm text-slate-300 bg-slate-700/50 px-3 py-2 rounded-lg">{syncResult}</p>}
+        </section>
+
+        {/* BONUS LOCK */}
+        <section className="bg-gradient-to-br from-purple-900/20 to-slate-800 border border-purple-500/30 rounded-xl p-5">
+          <h2 className="text-sm font-bold text-purple-300 uppercase tracking-wider mb-4 flex items-center gap-2">
+            🎯 Predicciones de Largo Plazo
+          </h2>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm text-slate-300">
+                Estado: {bonusOpen
+                  ? <span className="text-green-400 font-bold">🔓 Abierto para todos</span>
+                  : <span className="text-red-400 font-bold">🔒 Bloqueado (torneo en curso)</span>
+                }
+              </p>
+              <p className="text-xs text-slate-500 mt-1">
+                {bonusOpen
+                  ? 'Los usuarios pueden editar sus apuestas de largo plazo ahora.'
+                  : 'Desbloquea para que los usuarios completen sus predicciones.'}
+              </p>
+            </div>
+            <button
+              onClick={toggleBonus}
+              disabled={togglingBonus}
+              className={`flex items-center gap-2 px-4 py-2 text-sm font-bold rounded-lg shrink-0 disabled:opacity-50 ${
+                bonusOpen
+                  ? 'bg-red-700 hover:bg-red-600 text-white'
+                  : 'bg-green-700 hover:bg-green-600 text-white'
+              }`}>
+              {togglingBonus ? '...' : bonusOpen ? <><Lock size={13}/> Bloquear</> : <><Unlock size={13}/> Desbloquear</>}
+            </button>
+          </div>
         </section>
 
         {/* CHAOS EVENTS */}

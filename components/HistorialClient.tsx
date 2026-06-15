@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Flame, Target } from 'lucide-react'
+import { Flame, Target, Clock, Radio } from 'lucide-react'
 import type { AuthUser, Match, Prediction } from '@/lib/types'
 import Header from './Header'
 
@@ -23,8 +23,12 @@ const RESULT_CONFIG = {
   miss:    { label: 'Fallo ❌',  color: 'text-red-400',   border: 'border-slate-700/50 bg-slate-800/40 opacity-70' },
 }
 
+function formatKickOff(iso: string): string {
+  return new Date(iso).toLocaleDateString('es', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+}
+
 export default function HistorialClient({ currentUser }: { currentUser: AuthUser }) {
-  const [entries, setEntries] = useState<Entry[]>([])
+  const [allEntries, setAllEntries] = useState<Entry[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -34,9 +38,9 @@ export default function HistorialClient({ currentUser }: { currentUser: AuthUser
     ]).then(([matches, preds]: [Match[], Prediction[]]) => {
       const list: Entry[] = preds
         .map(p => ({ match: matches.find(m => m.id === p.match_id)!, prediction: p }))
-        .filter(e => e.match?.status === 'finished')
+        .filter(e => !!e.match)
         .sort((a, b) => new Date(b.match.kick_off_time).getTime() - new Date(a.match.kick_off_time).getTime())
-      setEntries(list)
+      setAllEntries(list)
       setLoading(false)
     })
   }, [])
@@ -47,8 +51,11 @@ export default function HistorialClient({ currentUser }: { currentUser: AuthUser
     </div>
   )
 
-  // Stats
-  const stats = entries.reduce((acc, { match, prediction: p }) => {
+  const finishedEntries = allEntries.filter(e => e.match.status === 'finished')
+  const pendingEntries = allEntries.filter(e => e.match.status !== 'finished')
+
+  // Stats based on finished matches only
+  const stats = finishedEntries.reduce((acc, { match, prediction: p }) => {
     if (match.home_score === null) return acc
     const t = getResultType(p.home_score, p.away_score, match.home_score, match.away_score!)
     acc.total++
@@ -71,7 +78,7 @@ export default function HistorialClient({ currentUser }: { currentUser: AuthUser
         <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
           <div className="grid grid-cols-3 gap-4 mb-5">
             <div className="text-center">
-              <p className="text-3xl font-black text-white">{stats.total}</p>
+              <p className="text-3xl font-black text-white">{allEntries.length}</p>
               <p className="text-xs text-slate-500 mt-1">Apostados</p>
             </div>
             <div className="text-center">
@@ -96,17 +103,74 @@ export default function HistorialClient({ currentUser }: { currentUser: AuthUser
               </div>
             ))}
           </div>
+          {finishedEntries.length === 0 && allEntries.length > 0 && (
+            <p className="text-xs text-slate-500 text-center mt-3 italic">Los puntos aparecerán cuando finalicen tus partidos apostados.</p>
+          )}
         </div>
 
-        {/* History list */}
-        {entries.length === 0 ? (
+        {/* Sin predicciones */}
+        {allEntries.length === 0 && (
           <div className="text-center py-16 text-slate-500">
             <Target size={40} className="mx-auto mb-3 opacity-30" />
-            <p>No has apostado en ningún partido finalizado aún.</p>
+            <p>Aún no has hecho ninguna predicción.</p>
+            <p className="text-sm mt-1">Ve a <strong>Partidos</strong> y apuesta antes del pitazo inicial.</p>
           </div>
-        ) : (
+        )}
+
+        {/* Partidos en juego */}
+        {pendingEntries.filter(e => e.match.status === 'live').length > 0 && (
           <div className="space-y-2">
-            {entries.map(({ match, prediction: p }) => {
+            <p className="text-xs font-black text-red-400 uppercase tracking-widest flex items-center gap-1.5">
+              <Radio size={11} className="animate-pulse" /> En juego ahora
+            </p>
+            {pendingEntries.filter(e => e.match.status === 'live').map(({ match, prediction: p }) => (
+              <div key={match.id} className="flex items-center justify-between p-3 rounded-xl border border-red-700/40 bg-red-950/20">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-white truncate">{match.home_team} vs {match.away_team}</p>
+                  <p className="text-xs text-slate-500 mt-0.5 font-mono">
+                    Tu apuesta: <span className="text-white">{p.home_score}-{p.away_score}</span>
+                    {p.is_joker && <span className="ml-1 text-yellow-400">⚡</span>}
+                    {match.home_score !== null && (
+                      <span className="ml-2 text-red-300">· Marcador: {match.home_score}-{match.away_score}</span>
+                    )}
+                  </p>
+                </div>
+                <span className="text-xs text-red-400 font-bold shrink-0 ml-3">En juego</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Predicciones pendientes */}
+        {pendingEntries.filter(e => e.match.status === 'pending').length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+              <Clock size={11} /> Predicciones guardadas (por jugar)
+            </p>
+            {pendingEntries.filter(e => e.match.status === 'pending')
+              .sort((a, b) => new Date(a.match.kick_off_time).getTime() - new Date(b.match.kick_off_time).getTime())
+              .map(({ match, prediction: p }) => (
+              <div key={match.id} className="flex items-center justify-between p-3 rounded-xl border border-slate-700 bg-slate-800/60 opacity-80">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-white truncate">{match.home_team} vs {match.away_team}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    <span className="font-mono">Apuesta: <span className="text-slate-300">{p.home_score}-{p.away_score}</span></span>
+                    {p.is_joker && <span className="ml-1 text-yellow-400">⚡</span>}
+                    <span className="mx-1.5">·</span>
+                    <span>{formatKickOff(match.kick_off_time)}</span>
+                  </p>
+                </div>
+                <span className="text-xs text-slate-500 font-bold shrink-0 ml-3">Por jugar</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Partidos finalizados */}
+        {finishedEntries.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Resultados finales</p>
+            {finishedEntries.map(({ match, prediction: p }) => {
               const rH = match.home_score!
               const rA = match.away_score!
               const type = getResultType(p.home_score, p.away_score, rH, rA)
@@ -134,6 +198,12 @@ export default function HistorialClient({ currentUser }: { currentUser: AuthUser
                 </div>
               )
             })}
+          </div>
+        )}
+
+        {finishedEntries.length === 0 && allEntries.length > 0 && (
+          <div className="text-center py-6 text-slate-600">
+            <p className="text-sm">Tus partidos apostados aún no han finalizado.</p>
           </div>
         )}
       </main>

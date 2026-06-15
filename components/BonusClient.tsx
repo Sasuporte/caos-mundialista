@@ -16,7 +16,8 @@ const FIELDS = [
 
 export default function BonusClient({ currentUser }: { currentUser: AuthUser }) {
   const [bet, setBet] = useState<Partial<Record<string, string>>>({})
-  const [locked, setLocked] = useState(false)
+  const [locked, setLocked] = useState(true)
+  const [adminUnlocked, setAdminUnlocked] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -26,12 +27,22 @@ export default function BonusClient({ currentUser }: { currentUser: AuthUser }) 
       fetch('/api/long-term-bets').then(r => r.json()),
       fetch('/api/matches').then(r => r.json()),
     ]).then(([betData, matches]) => {
-      if (betData) {
+      if (betData && !betData.error) {
         const fields = ['champion','runner_up','third_place','top_scorer','revelation_team','disappointment_team']
         const b: Record<string, string> = {}
         fields.forEach(f => { if (betData[f]) b[f] = betData[f] })
         setBet(b)
+
+        // Admin override: bonus_open flag
+        if (betData.bonus_open === true) {
+          setAdminUnlocked(true)
+          setLocked(false)
+          setLoading(false)
+          return
+        }
       }
+
+      // Time-based lock: 15 min before first match
       if (Array.isArray(matches) && matches.length > 0) {
         const first = [...matches].sort((a: any, b: any) =>
           new Date(a.kick_off_time).getTime() - new Date(b.kick_off_time).getTime()
@@ -44,14 +55,19 @@ export default function BonusClient({ currentUser }: { currentUser: AuthUser }) 
 
   const handleSave = async () => {
     setSaving(true)
-    await fetch('/api/long-term-bets', {
+    const res = await fetch('/api/long-term-bets', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(bet),
     })
     setSaving(false)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+    if (res.ok) {
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } else {
+      const data = await res.json()
+      alert(data.error ?? 'Error al guardar.')
+    }
   }
 
   if (loading) return (
@@ -67,8 +83,11 @@ export default function BonusClient({ currentUser }: { currentUser: AuthUser }) 
         <div className="bg-gradient-to-br from-purple-900/30 to-slate-800 rounded-2xl border border-purple-500/30 p-6">
           <h1 className="text-2xl font-black text-purple-300 mb-1">Predicciones de Largo Plazo</h1>
           <p className="text-sm text-slate-400 mb-6">
-            {locked ? '🔒 Bloqueadas — el torneo ya comenzó.'
-            : 'Se bloquean 15 min antes del primer partido. Puntos masivos te esperan.'}
+            {locked
+              ? '🔒 Bloqueadas — el torneo ya comenzó.'
+              : adminUnlocked
+                ? '🔓 Abiertas por el administrador. Guarda antes de que se cierren.'
+                : 'Se bloquean 15 min antes del primer partido. Puntos masivos te esperan.'}
           </p>
           <div className="space-y-4">
             {FIELDS.map(({ key, label, pts, hint }) => (
