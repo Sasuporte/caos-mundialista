@@ -31,6 +31,16 @@ const RULES = [
   ]},
 ]
 
+function shareOnWhatsApp(username: string, position: number, points: number) {
+  const msgs = [
+    `🏆 SOY EL LÍDER en Caos Mundialista con ${points} pts! ¿Alguien me puede quitar? 🔥 caos.portelabs.com`,
+    `🥈 Voy #${position} con ${points} pts en Caos Mundialista. ¡Voy por el primero! caos.portelabs.com`,
+    `⚽ Estoy en el puesto #${position} con ${points} pts. ¡La batalla sigue! caos.portelabs.com`,
+  ]
+  const msg = position === 1 ? msgs[0] : position <= 3 ? msgs[1] : msgs[2]
+  window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
+}
+
 export default function RankingClient({ currentUser }: { currentUser: AuthUser }) {
   const [ranking, setRanking] = useState<RankedUser[]>([])
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -40,36 +50,25 @@ export default function RankingClient({ currentUser }: { currentUser: AuthUser }
   const debounce = useRef<NodeJS.Timeout | null>(null)
 
   const fetchRanking = async () => {
-    fetch('/api/ranking').then(r => r.json()).then(d => {
-      setRanking(d)
-      setLoading(false)
-    })
+    fetch('/api/ranking').then(r => r.json()).then(d => { setRanking(d); setLoading(false) })
   }
 
   useEffect(() => {
     fetchRanking()
-
-    // Realtime: refresh ranking whenever predictions or matches change
     const channel = supabase
       .channel('ranking-live')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'predictions' }, () => {
         if (debounce.current) clearTimeout(debounce.current)
         debounce.current = setTimeout(fetchRanking, 800)
-        setLive(true)
-        setTimeout(() => setLive(false), 2000)
+        setLive(true); setTimeout(() => setLive(false), 2000)
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, () => {
         if (debounce.current) clearTimeout(debounce.current)
         debounce.current = setTimeout(fetchRanking, 800)
-        setLive(true)
-        setTimeout(() => setLive(false), 2000)
+        setLive(true); setTimeout(() => setLive(false), 2000)
       })
       .subscribe()
-
-    return () => {
-      if (debounce.current) clearTimeout(debounce.current)
-      supabase.removeChannel(channel)
-    }
+    return () => { if (debounce.current) clearTimeout(debounce.current); supabase.removeChannel(channel) }
   }, [])
 
   if (loading) return (
@@ -111,14 +110,10 @@ export default function RankingClient({ currentUser }: { currentUser: AuthUser }
                   }`}>
                   <div className="flex items-center gap-3">
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-black ${
-                      isFirst ? 'bg-yellow-500 text-black'
-                      : i === 1 ? 'bg-slate-400 text-black'
-                      : i === 2 ? 'bg-amber-700 text-white'
-                      : isLast ? 'bg-red-600 text-white'
+                      isFirst ? 'bg-yellow-500 text-black' : i === 1 ? 'bg-slate-400 text-black'
+                      : i === 2 ? 'bg-amber-700 text-white' : isLast ? 'bg-red-600 text-white'
                       : 'bg-slate-700 text-slate-300'
-                    }`}>
-                      {isLast ? <Frown size={14}/> : i + 1}
-                    </div>
+                    }`}>{isLast ? <Frown size={14}/> : i + 1}</div>
                     <div>
                       <div className="font-bold flex items-center gap-2 flex-wrap">
                         {user.username}
@@ -129,6 +124,14 @@ export default function RankingClient({ currentUser }: { currentUser: AuthUser }
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    {isMe && (
+                      <button
+                        onClick={e => { e.stopPropagation(); shareOnWhatsApp(user.username, i + 1, user.total_points) }}
+                        className="text-[11px] bg-green-700/30 hover:bg-green-700/60 border border-green-700/40 text-green-400 px-2 py-1 rounded-lg font-bold transition-colors"
+                        title="Compartir en WhatsApp">
+                        💬 WA
+                      </button>
+                    )}
                     <div>
                       <div className={`text-2xl font-black ${
                         isLast ? 'text-red-400' : isFirst ? 'text-yellow-300' : 'text-white'
