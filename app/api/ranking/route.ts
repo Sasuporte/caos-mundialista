@@ -97,5 +97,5 @@ export async function GET() {
 
   ranked.sort((a, b) => b.total_points - a.total_points)
 
-  return NextResponse.json(ranked)
+  return NextResponse.json(ranked, { headers: { "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate", "CDN-Cache-Control": "no-store", "Vercel-CDN-Cache-Control": "no-store" } })
 }
