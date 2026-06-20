@@ -45,56 +45,66 @@ export default function PartidosClient({ currentUser }: { currentUser: AuthUser 
   const [leader, setLeader] = useState<RankedUser | null>(null)
   const [isCurrentUserLeader, setIsCurrentUserLeader] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [openDays, setOpenDays] = useState<Set<number>>(new Set())
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
 
   const loadData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
-    const [mRes, pRes, tcRes, rankRes] = await Promise.all([
-      fetch('/api/matches'),
-      fetch('/api/predictions'),
-      fetch('/api/trap-cards'),
-      fetch('/api/ranking'),
-    ])
-    const mData: Match[] = await mRes.json()
-    const pData: Prediction[] = await pRes.json()
-    const tcData = await tcRes.json()
-    const rankData: RankedUser[] = await rankRes.json()
+    try {
+      const [mRes, pRes, tcRes, rankRes] = await Promise.all([
+        fetch('/api/matches'),
+        fetch('/api/predictions'),
+        fetch('/api/trap-cards'),
+        fetch('/api/ranking'),
+      ])
 
-    setMatches(mData)
-    setTrapCard(tcData)
+      if (!mRes.ok || !pRes.ok) throw new Error('Error al cargar los partidos')
 
-    const myRank = rankData.findIndex(u => u.id === currentUser.id)
-    setIsCurrentUserLeader(myRank === 0)
-    setLeader(myRank === 0 ? (rankData[1] ?? null) : (rankData[0] ?? null))
+      const mData: Match[] = await mRes.json()
+      const pData: Prediction[] = await pRes.json()
+      const tcData = await tcRes.json()
+      const rankData: RankedUser[] = rankRes.ok ? await rankRes.json() : []
 
-    const pm: Record<string, Prediction> = {}
-    const jk: Record<number, string> = {}
-    pData.forEach(p => {
-      pm[p.match_id] = p
-      if (p.is_joker) {
-        const m = mData.find(m => m.id === p.match_id)
-        if (m) jk[m.matchday] = p.match_id
+      setMatches(mData)
+      setTrapCard(tcData)
+      setLoadError(null)
+
+      const myRank = rankData.findIndex(u => u.id === currentUser.id)
+      setIsCurrentUserLeader(myRank === 0)
+      setLeader(myRank === 0 ? (rankData[1] ?? null) : (rankData[0] ?? null))
+
+      const pm: Record<string, Prediction> = {}
+      const jk: Record<number, string> = {}
+      pData.forEach(p => {
+        pm[p.match_id] = p
+        if (p.is_joker) {
+          const m = mData.find(m => m.id === p.match_id)
+          if (m) jk[m.matchday] = p.match_id
+        }
+      })
+      setPredMap(pm)
+      setJokers(jk)
+
+      if (!silent) {
+        const active = getActiveMatchday(mData)
+        if (active !== null) setOpenDays(new Set([active]))
       }
-    })
-    setPredMap(pm)
-    setJokers(jk)
 
-    if (!silent) {
-      const active = getActiveMatchday(mData)
-      if (active !== null) setOpenDays(new Set([active]))
+      // Auto-refresh every 60s when there are live matches
+      const hasLive = mData.some(m => m.status === 'live')
+      if (hasLive && !intervalRef.current) {
+        intervalRef.current = setInterval(() => loadData(true), 60000)
+      } else if (!hasLive && intervalRef.current) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+      }
+    } catch (err) {
+      console.error('[PartidosClient] loadData error:', err)
+      if (!silent) setLoadError('No se pudieron cargar los partidos. Intenta recargar la página.')
+    } finally {
+      setLoading(false)
     }
-
-    // Auto-refresh every 60s when there are live matches
-    const hasLive = mData.some(m => m.status === 'live')
-    if (hasLive && !intervalRef.current) {
-      intervalRef.current = setInterval(() => loadData(true), 60000)
-    } else if (!hasLive && intervalRef.current) {
-      clearInterval(intervalRef.current)
-      intervalRef.current = null
-    }
-
-    setLoading(false)
   }, [currentUser.id])
 
   useEffect(() => {
@@ -140,6 +150,19 @@ export default function PartidosClient({ currentUser }: { currentUser: AuthUser 
   if (loading) return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center">
       <Flame className="text-orange-500 animate-spin" size={32} />
+    </div>
+  )
+
+  if (loadError) return (
+    <div className="min-h-screen bg-slate-900 text-slate-200 pb-20">
+      <Header currentUser={currentUser} activeTab="partidos" />
+      <div className="text-center py-24 text-slate-500">
+        <p className="text-4xl mb-4">⚠️</p>
+        <p className="text-slate-400 mb-4">{loadError}</p>
+        <button onClick={() => loadData()} className="text-sm text-orange-400 hover:text-orange-300 border border-orange-500/30 px-4 py-2 rounded-lg">
+          Reintentar
+        </button>
+      </div>
     </div>
   )
 
