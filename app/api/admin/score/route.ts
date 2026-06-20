@@ -26,18 +26,37 @@ export async function POST(req: NextRequest) {
 
   // Evaluate trap cards for this match
   const { data: traps } = await db.from('trap_cards').select('*').eq('match_id', match_id).eq('triggered', false)
-  if (traps) {
+  if (traps && traps.length > 0) {
+    const { data: allFinishedMatches } = await db.from('matches').select('*').eq('status', 'finished')
+
     await Promise.all(traps.map(async tc => {
-      const pred = preds?.find(p => p.user_id === tc.attacker_id)
-      const pts = pred ? calculateMatchPoints(pred as any, match as any) : 0
-      const succeeded = pts > 0
+      const attackerPred = preds?.find(p => p.user_id === tc.attacker_id)
+
+      // La trampa solo se activa si el atacante acierta el marcador EXACTO
+      const succeeded = attackerPred != null &&
+        attackerPred.home_score === match.home_score &&
+        attackerPred.away_score === match.away_score
+
       let pointsStolen = 0
       if (succeeded) {
-        const victimPred = preds?.find(p => p.user_id === tc.target_id)
-        const victimPts = victimPred ? calculateMatchPoints(victimPred as any, match as any) : 0
-        pointsStolen = Math.round(victimPts * 0.20)
+        // Robar el 20% del TOTAL acumulado del lider, no solo de este partido
+        const [{ data: victimUser }, { data: victimPreds }] = await Promise.all([
+          db.from('users').select('points_base').eq('id', tc.target_id).single(),
+          db.from('predictions').select('*').eq('user_id', tc.target_id),
+        ])
+
+        let victimTotal = victimUser?.points_base ?? 0
+        ;(victimPreds ?? []).forEach((vp: any) => {
+          const m = (allFinishedMatches ?? []).find((fm: any) => fm.id === vp.match_id)
+          if (m) victimTotal += calculateMatchPoints(vp, m)
+        })
+
+        pointsStolen = Math.round(victimTotal * 0.20)
       }
-      await db.from('trap_cards').update({ triggered: true, succeeded, points_stolen: pointsStolen }).eq('id', tc.id)
+
+      return db.from('trap_cards')
+        .update({ triggered: true, succeeded, points_stolen: pointsStolen })
+        .eq('id', tc.id)
     }))
   }
 
