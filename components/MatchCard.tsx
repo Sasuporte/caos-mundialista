@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ShieldAlert, Zap, Skull, Save } from 'lucide-react'
 import type { Match, Prediction } from '@/lib/types'
 import CountdownTimer from './CountdownTimer'
@@ -37,6 +37,12 @@ export default function MatchCard({
   const [saving, setSaving] = useState(false)
   const [justSaved, setJustSaved] = useState(false)
   const [trapping, setTrapping] = useState(false)
+
+  // Sincronizar inputs cuando llega una prediccion actualizada desde el servidor
+  useEffect(() => {
+    if (prediction?.home_score != null) setLocalHome(String(prediction.home_score))
+    if (prediction?.away_score != null) setLocalAway(String(prediction.away_score))
+  }, [prediction?.home_score, prediction?.away_score])
 
   const save = async (joker?: boolean) => {
     if (locked || localHome === '' || localAway === '') return
@@ -120,7 +126,7 @@ export default function MatchCard({
         <p className="flex-1 text-center text-sm font-bold leading-tight">{match.away_team}</p>
       </div>
 
-      {/* Botón explícito Guardar — evita depender solo de onBlur */}
+      {/* Botón explícito Guardar */}
       {!locked && hasBothInputs && (
         <button
           onClick={() => save()}
