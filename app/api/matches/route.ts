@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 
-export const dynamic = 'force-dynamic'
+// Los partidos solo cambian cuando el admin actualiza resultados.
+// Cache de 30s reduce carga en Supabase y mejora TTFB.
+export const revalidate = 30
 
 export async function GET() {
   const db = createServerClient()
