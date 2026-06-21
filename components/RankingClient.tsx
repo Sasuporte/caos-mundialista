@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Trophy, Frown, ChevronDown, ChevronUp, Skull, Flame, Radio } from 'lucide-react'
 import type { AuthUser, RankedUser } from '@/lib/types'
-import { supabase } from '@/lib/supabase'
 import Header from './Header'
 
 const RULES = [
@@ -47,34 +46,26 @@ export default function RankingClient({ currentUser }: { currentUser: AuthUser }
   const [showRules, setShowRules] = useState(false)
   const [loading, setLoading] = useState(true)
   const [live, setLive] = useState(false)
-  const debounce = useRef<NodeJS.Timeout | null>(null)
+  const pollRef = useRef<NodeJS.Timeout | null>(null)
 
-  const fetchRanking = async () => {
-    fetch('/api/ranking').then(r => r.json()).then(d => {
-      if (Array.isArray(d)) { setRanking(d) }
-      setLoading(false)
-    })
-  }
-
-  const triggerRefresh = () => {
-    if (debounce.current) clearTimeout(debounce.current)
-    debounce.current = setTimeout(fetchRanking, 800)
-    setLive(true)
-    setTimeout(() => setLive(false), 2000)
+  const fetchRanking = async (silent = false) => {
+    if (!silent) setLoading(true)
+    try {
+      const res = await fetch('/api/ranking', { cache: 'no-store' })
+      const d = await res.json()
+      if (Array.isArray(d)) {
+        setRanking(d)
+        if (silent) { setLive(true); setTimeout(() => setLive(false), 2000) }
+      }
+    } catch (_) {}
+    setLoading(false)
   }
 
   useEffect(() => {
     fetchRanking()
-    const channel = supabase
-      .channel('ranking-live')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'predictions' }, triggerRefresh)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, triggerRefresh)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, triggerRefresh)
-      .subscribe()
-    return () => {
-      if (debounce.current) clearTimeout(debounce.current)
-      supabase.removeChannel(channel)
-    }
+    // Polling cada 30s en lugar de Supabase Realtime — reduce bundle ~66KB
+    pollRef.current = setInterval(() => fetchRanking(true), 30000)
+    return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [])
 
   if (loading) return (
