@@ -6,13 +6,23 @@ import type { Match, Prediction } from '@/lib/types'
 import CountdownTimer from './CountdownTimer'
 
 const PHASE_LABEL: Record<string, string> = {
-  grupos: 'Grupos', octavos: 'Octavos', cuartos: 'Cuartos ×2',
-  semis: 'Semi ×2', final: 'Final ×2',
+  grupos: 'Grupos', octavos: 'Octavos', cuartos: 'Cuartos x2',
+  semis: 'Semi x2', final: 'Final x2',
 }
 
 function isLocked(match: Match): boolean {
   if (match.status === 'finished') return true
   return Date.now() >= new Date(match.kick_off_time).getTime() - 15 * 60 * 1000
+}
+
+function formatLocalDate(kickOff: string): string {
+  return new Date(kickOff).toLocaleString(undefined, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
 
 interface Props {
@@ -37,6 +47,9 @@ export default function MatchCard({
   const [saving, setSaving] = useState(false)
   const [justSaved, setJustSaved] = useState(false)
   const [trapping, setTrapping] = useState(false)
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => { setMounted(true) }, [])
 
   // Sincronizar inputs cuando llega una prediccion actualizada desde el servidor
   useEffect(() => {
@@ -54,8 +67,8 @@ export default function MatchCard({
   }
 
   const handleTrapCard = async () => {
-    const target = leaderName ?? 'el líder'
-    if (!window.confirm(`¿Activar Carta Trampa en ${match.home_team} vs ${match.away_team}?\n\nSi aciertas el marcador exacto aquí, robas el 20% de los puntos de ${target}.`)) return
+    const target = leaderName ?? 'el lider'
+    if (!window.confirm('Activar Carta Trampa en ' + match.home_team + ' vs ' + match.away_team + '?\n\nSi aciertas el marcador exacto aqui, robas el 20% de los puntos de ' + target + '.')) return
     setTrapping(true)
     await onTrapCard(match.id)
     setTrapping(false)
@@ -67,16 +80,18 @@ export default function MatchCard({
   const hasBothInputs = localHome !== '' && localAway !== ''
 
   return (
-    <div className={`bg-slate-800 rounded-2xl p-5 border transition-all ${
-      locked ? 'border-red-900/30 opacity-90' : 'border-slate-700 hover:border-slate-500'
-    }${isJoker ? ' ring-1 ring-yellow-500/40' : ''}${
-      isTrapActive ? ' ring-2 ring-purple-500/60 shadow-[0_0_16px_rgba(168,85,247,0.2)]' : ''
-    }`}>
+    <div className={[
+      'bg-slate-800 rounded-2xl p-5 border transition-all',
+      locked ? 'border-red-900/30 opacity-90' : 'border-slate-700 hover:border-slate-500',
+      isJoker ? ' ring-1 ring-yellow-500/40' : '',
+      isTrapActive ? ' ring-2 ring-purple-500/60 shadow-[0_0_16px_rgba(168,85,247,0.2)]' : '',
+    ].join('')}>
 
-      <div className="flex justify-between items-center mb-3">
-        <span className={`text-xs font-bold uppercase tracking-wider ${
-          isHighPhase ? 'text-orange-400' : 'text-slate-500'
-        }`}>{PHASE_LABEL[match.phase] ?? match.phase}</span>
+      {/* Fase y estado */}
+      <div className="flex justify-between items-center mb-1">
+        <span className={['text-xs font-bold uppercase tracking-wider', isHighPhase ? 'text-orange-400' : 'text-slate-500'].join(' ')}>
+          {PHASE_LABEL[match.phase] ?? match.phase}
+        </span>
         {match.status === 'finished' ? (
           <span className="text-xs bg-slate-700 text-slate-400 px-2 py-0.5 rounded">Finalizado</span>
         ) : match.status === 'live' ? (
@@ -90,12 +105,19 @@ export default function MatchCard({
         )}
       </div>
 
-      {/* Marcador real cuando está en juego */}
+      {/* Fecha y hora local del partido */}
+      {mounted && (
+        <p className="text-[11px] text-slate-500 mb-3">
+          {formatLocalDate(match.kick_off_time)}
+        </p>
+      )}
+
+      {/* Marcador actual cuando esta en juego */}
       {match.status === 'live' && match.home_score !== null && (
         <div className="flex items-center justify-center gap-2 mb-3 bg-red-950/40 border border-red-700/30 rounded-lg px-3 py-1.5">
           <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
           <span className="text-xs text-red-300 font-bold">
-            Marcador actual: {match.home_score} – {match.away_score}
+            Marcador actual: {match.home_score} {'–'} {match.away_score}
           </span>
         </div>
       )}
@@ -108,9 +130,9 @@ export default function MatchCard({
             onChange={e => setLocalHome(e.target.value)}
             onBlur={() => save()}
             disabled={locked || saving}
-            className={`w-12 h-12 text-center text-xl font-black rounded-xl bg-slate-900 border focus:outline-none ${
+            className={['w-12 h-12 text-center text-xl font-black rounded-xl bg-slate-900 border focus:outline-none',
               locked ? 'border-slate-700 text-slate-500 cursor-not-allowed' : 'border-slate-600 focus:border-orange-500 text-white'
-            }`}
+            ].join(' ')}
           />
           <span className="text-slate-600 font-bold px-0.5">-</span>
           <input type="number" min={0} max={20}
@@ -118,24 +140,24 @@ export default function MatchCard({
             onChange={e => setLocalAway(e.target.value)}
             onBlur={() => save()}
             disabled={locked || saving}
-            className={`w-12 h-12 text-center text-xl font-black rounded-xl bg-slate-900 border focus:outline-none ${
+            className={['w-12 h-12 text-center text-xl font-black rounded-xl bg-slate-900 border focus:outline-none',
               locked ? 'border-slate-700 text-slate-500 cursor-not-allowed' : 'border-slate-600 focus:border-orange-500 text-white'
-            }`}
+            ].join(' ')}
           />
         </div>
         <p className="flex-1 text-center text-sm font-bold leading-tight">{match.away_team}</p>
       </div>
 
-      {/* Botón explícito Guardar */}
+      {/* Boton explícito Guardar */}
       {!locked && hasBothInputs && (
         <button
           onClick={() => save()}
           disabled={saving}
-          className={`w-full mt-2 py-1.5 text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+          className={['w-full mt-2 py-1.5 text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 transition-all disabled:opacity-40',
             justSaved
               ? 'bg-green-700/50 text-green-300 border border-green-700/40'
               : 'bg-slate-700/60 hover:bg-slate-700 text-slate-300 border border-slate-600'
-          } disabled:opacity-40`}>
+          ].join(' ')}>
           {saving ? '...' : justSaved ? '✓ Guardado' : <><Save size={11}/> Guardar predicción</>}
         </button>
       )}
@@ -145,38 +167,40 @@ export default function MatchCard({
           <span className="text-slate-400">Tu apuesta: </span>
           <span className="text-white font-bold">{prediction.home_score}-{prediction.away_score}</span>
           {prediction.points_earned != null && (
-            <span className={`ml-2 font-black ${
+            <span className={['ml-2 font-black',
               prediction.points_earned > 0 ? 'text-green-400' : prediction.points_earned < 0 ? 'text-red-400' : 'text-slate-500'
-            }`}>{prediction.points_earned > 0 ? '+' : ''}{prediction.points_earned} pts</span>
+            ].join(' ')}>
+              {prediction.points_earned > 0 ? '+' : ''}{prediction.points_earned} pts
+            </span>
           )}
         </div>
       )}
 
-      {/* Tu predicción cuando el partido está en juego (locked) */}
+      {/* Tu prediccion cuando el partido esta en juego */}
       {match.status === 'live' && prediction && (
         <div className="text-center text-xs border-t border-slate-700 pt-2 mt-3">
           <span className="text-slate-400">Tu predicción: </span>
           <span className="text-white font-bold">{prediction.home_score}-{prediction.away_score}</span>
-          {isJoker && <span className="ml-1 text-yellow-400">⚡ Comodín</span>}
+          {isJoker && <span className="ml-1 text-yellow-400">Comodin</span>}
         </div>
       )}
 
       {isTrapActive && !locked && (
         <div className="mt-3 pt-3 border-t border-purple-700/30 flex items-center gap-2 text-xs text-purple-300">
           <Skull size={12} />
-          <span>Carta Trampa activa vs <strong>{leaderName ?? 'el líder'}</strong> — aciertas exacto y robas el 20%</span>
+          <span>Carta Trampa activa vs <strong>{leaderName ?? 'el lider'}</strong> &mdash; aciertas exacto y robas el 20%</span>
         </div>
       )}
 
       {!locked && (
-        <div className={`mt-3 pt-3 border-t border-slate-700 flex gap-2 ${isTrapActive ? 'hidden' : ''}`}>
+        <div className={['mt-3 pt-3 border-t border-slate-700 flex gap-2', isTrapActive ? 'hidden' : ''].join(' ')}>
           <button
             onClick={() => save(!isJoker)}
             disabled={saving || !hasBothInputs}
-            className={`flex-1 py-2 text-xs font-bold rounded-lg flex items-center justify-center gap-1 transition-all disabled:opacity-40 ${
+            className={['flex-1 py-2 text-xs font-bold rounded-lg flex items-center justify-center gap-1 transition-all disabled:opacity-40',
               isJoker ? 'bg-yellow-500 text-black shadow-[0_0_14px_rgba(234,179,8,0.35)]' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-            }`}>
-            <Zap size={13}/> Comodín {isJoker ? '(Activo)' : 'x2'}
+            ].join(' ')}>
+            <Zap size={13}/> Comodin {isJoker ? '(Activo)' : 'x2'}
           </button>
 
           {canShowTrap && !hasUsedTrapCard && (
@@ -184,7 +208,7 @@ export default function MatchCard({
               onClick={handleTrapCard}
               disabled={trapping}
               className="flex-1 py-2 text-xs font-bold rounded-lg flex items-center justify-center gap-1 bg-slate-700 text-slate-300 hover:bg-purple-700 hover:text-white transition-all disabled:opacity-50">
-              <Skull size={13}/> Trampa al líder
+              <Skull size={13}/> Trampa al lider
             </button>
           )}
         </div>
