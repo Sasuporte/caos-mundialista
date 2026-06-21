@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { unstable_noStore as noStore } from 'next/cache'
 import { createServerClient } from '@/lib/supabase-server'
 import { calculateMatchPoints, calculateLongTermPoints } from '@/lib/scoring'
 
@@ -56,6 +57,7 @@ function buildScore(
 }
 
 export async function GET() {
+  noStore()
   const db = createServerClient()
 
   const [usersRes, matchesRes, predsRes, ltBetsRes, ltResultsRes, trapRes] = await Promise.all([
